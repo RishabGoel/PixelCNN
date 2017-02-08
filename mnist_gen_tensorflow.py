@@ -13,6 +13,7 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 from sklearn.datasets import load_digits
 
+from gated_pixel_cnn import *
 parser = argparse.ArgumentParser()
 
 # Data IO
@@ -77,19 +78,22 @@ class main(object):
 
 		if os.path.isfile(save_dir+"model.ckpt") == False:
 			init = tf.global_variables_initializer()
-			X = tf.placeholder(tf.float32, [None, 8, 8, 1])
-			X_r = tf.placeholder(tf.float32, [None, 8, 8, 1])
+			X = tf.placeholder(tf.float32, [200, 8, 8, 1])
+			X_r = tf.placeholder(tf.float32, [200, 8, 8, 1])
+			X_r1 = self.softmax(tf.reshape(X_r, [200, 8, 8]))
+
+			# X_r = self.softmax(tf.reshape(tf.placeholder(tf.float32, [200, 8, 8, 1]), [200, 8, 8]))
 			# print "X", X.get_shape()
 			pixelcnn = PixelCNN(X, [200, 8, 8, 1], parser.activation, parser.features,
 												parser.q_levels, [7,3], parser.layers)
 			pixelcnn_output = pixelcnn.get_output()
 			p_o_s = pixelcnn_output.get_shape().as_list()
-			pixelcnn_output = tf.reshape(pixelcnn_output, [p_o_s[0], p_o_s[1], p_o_s[2]])
+			pixelcnn_output = tf.reshape(pixelcnn_output, [-1, p_o_s[-1]])
 			print pixelcnn_output.get_shape()
 			output_prob = self.softmax(pixelcnn_output)
 			
 			print output_prob.get_shape(), X_r.get_shape(),"shapes"
-			cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(output_prob, tf.reshape(X_r,[-1, 1])))
+			cost = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(tf.reshape(X_r1,[-1, 1]), tf.reshape(output_prob,[-1,1])))
 			optimizer = tf.train.AdamOptimizer(parser.lr).minimize(cost)
 		else:
 			exists = True
