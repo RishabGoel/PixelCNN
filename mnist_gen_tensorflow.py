@@ -23,11 +23,12 @@ parser.add_argument('-t', '--save_interval', type=int, default=20, help='Every h
 # model
 parser.add_argument('-a', '--activation', type = str, default = "relu", help = "Activation to be used for layers")
 parser.add_argument('-l', '--layers', type = int, default = 12, help = "Number of layers in the network")
-
+parser.add_argument('-fs', '--features', type = int, default = 32, help = "Number of features")
+parser.add_argument('-ql', '--q_levels', type = int, default = None, help = "Q_levels")
 # Optimization
-parser.add_argument('-f', '--learning_rate', type=float, default=0.001, help='Base learning rate')
+parser.add_argument('-f', '--lr', type=float, default=0.001, help='Base learning rate')
 parser.add_argument('-e', '--lr_decay', type=float, default=0.999995, help='Learning rate decay, applied every step of the optimization')
-parser.add_argument('-b', '--batch_size', type=int, default=12, help='Batch size during training per GPU')
+parser.add_argument('-b', '--batch_size', type=int, default=200, help='Batch size during training per GPU')
 parser.add_argument('-p', '--dropout_p', type=float, default=0.5, help='Dropout strength (i.e. 1 - keep_prob). 0 = No dropout, higher = more dropout.')
 parser.add_argument('-x', '--max_epochs', type=int, default=5000, help='How many epochs to run in total?')
 
@@ -43,10 +44,11 @@ class main(object):
 		
 		"""This methods reads the data"""
 		data_object = load_digits()
-		self.input_images = data_object.data
-		self.targets = data_object.target
-		self.images = data_object.images
+		self.input_images = self.__reshape_data(data_object.data)[:1600]
 
+		self.targets = data_object.target[:1600]
+		self.images = data_object.images
+		self.init = tf.global_variables_initializer()
 		self.__saver = tf.train.Saver()
 
 	def visualise_images(self): 
@@ -56,9 +58,14 @@ class main(object):
 		plt.show()
 
 	def __get_next_batch(self, input_images, input_images_r, batch_no):
-		return (input_images[self.__batch_size*(batch_no): self.__batch_size*(batch_no)],
-				input_images_r[self.__batch_size*(batch_no): self.__batch_size*(batch_no)])
+		return (input_images[self.__batch_size*(batch_no): self.__batch_size*(batch_no+1)],
+				input_images_r[self.__batch_size*(batch_no): self.__batch_size*(batch_no+1)])
 
+	def __reshape_data(self, data):
+		in_shape = data.shape
+		return np.reshape(data, (in_shape[0], 8, 8, -1))
+
+	
 	def train(self, parser):
 		"""
 		This function creates the computation graph and trains a PixelCNN model
@@ -69,15 +76,20 @@ class main(object):
 		exists = False
 
 		if os.path.isfile(save_dir+"model.ckpt") == False:
-			input_dims = tf.placeholder(tf.float32, [4])
 			init = tf.global_variables_initializer()
-			X = tf.placeholder(tf.float32, input_dims)
-			X_r = tf.placeholder(tf.float32, input_dims)
-			pixelcnn = self.GatedPixelCNN(X, input_dims, parser.activation, parser.features,
-												parser.q_levels, parser.filter_sizes, parser.layers)
-
-			output_prob = self.softmax(pixelcnn)
-			cost = tf.reduce_mean(tf.softmax_cross_entropy_with_logits(output_prob, tf.reshape(X_r,[-1, 3])))
+			X = tf.placeholder(tf.float32, [None, 8, 8, 1])
+			X_r = tf.placeholder(tf.float32, [None, 8, 8, 1])
+			# print "X", X.get_shape()
+			pixelcnn = PixelCNN(X, [200, 8, 8, 1], parser.activation, parser.features,
+												parser.q_levels, [7,3], parser.layers)
+			pixelcnn_output = pixelcnn.get_output()
+			p_o_s = pixelcnn_output.get_shape().as_list()
+			pixelcnn_output = tf.reshape(pixelcnn_output, [p_o_s[0], p_o_s[1], p_o_s[2]])
+			print pixelcnn_output.get_shape()
+			output_prob = self.softmax(pixelcnn_output)
+			
+			print output_prob.get_shape(), X_r.get_shape(),"shapes"
+			cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(output_prob, tf.reshape(X_r,[-1, 1])))
 			optimizer = tf.train.AdamOptimizer(parser.lr).minimize(cost)
 		else:
 			exists = True
@@ -92,7 +104,7 @@ class main(object):
 			for i in range(parser.max_epochs):
 				batch_no = 0
 				while (batch_no < num_batches):
-					x_train, x_train_r = self.__get_next_batch(input_images, input_images_r, batch_no)
+					x_train, x_train_r = self.__get_next_batch(self.input_images, self.input_images, batch_no)
 
 					feed_dict = {
 									X : x_train,
@@ -148,6 +160,6 @@ class main(object):
 
 		return X_samples
 
-
-# main().visualise_images()
+args = parser.parse_args()
+main().train(args)
 
